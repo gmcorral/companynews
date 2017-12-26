@@ -181,7 +181,15 @@ echo " ** [8/10] Uploading Cloudformation templates to S3.."
 $AWS_CLI s3api head-bucket --bucket $CF_TEMPLATES_BUCKET --region $AWS_DEFAULT_REGION > /dev/null
 if [[ $? -gt 0 ]]; then
     echo "  Creating $CF_TEMPLATES_BUCKET bucket"
-    $AWS_CLI s3api create-bucket --bucket $CF_TEMPLATES_BUCKET --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    if [[ "$AWS_DEFAULT_REGION" == "us-east-1" ]]; then
+        $AWS_CLI s3api create-bucket --bucket $CF_TEMPLATES_BUCKET
+    else
+        $AWS_CLI s3api create-bucket --bucket $CF_TEMPLATES_BUCKET --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
+    fi
+    if [[ $? -gt 0 ]]; then
+        echo " ** ERROR creating S3 bucket"
+        exit 1
+    fi
 fi
 
 upload_dir $CF_TEMPLATES_DIR $CF_TEMPLATES_URI
