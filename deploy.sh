@@ -21,7 +21,7 @@ STATIC_IMAGE_NAME=thoughtworks/static
 
 # cloudformation params
 CF_TEMPLATES_DIR=infrastructure
-CF_TEMPLATES_BUCKET=thoughtworks-companynews-code
+CF_TEMPLATES_BUCKET=thoughtworks-companynews-infrastructure
 CF_TEMPLATES_URL=https://s3.amazonaws.com/$CF_TEMPLATES_BUCKET
 CF_TEMPLATES_URI=s3://$CF_TEMPLATES_BUCKET
 CF_STACK_NAME=companynews-$ENV

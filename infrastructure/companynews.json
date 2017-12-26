@@ -71,7 +71,7 @@
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/vpc.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/vpc.json"
             }
         },
 
@@ -173,7 +173,7 @@
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-cluster.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/ecs-cluster.json"
             },
             "DependsOn": [ "VPC", "ECSClusterInstanceRole" ]
         },
@@ -191,7 +191,7 @@
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/load-balancer.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/load-balancer.json"
             },
             "DependsOn": [ "VPC", "ECSCluster", "CompanyNewsTargetGroup" ]
         },
@@ -241,7 +241,7 @@
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "companynews" ] ]} }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/ecs-service.json"
             },
             "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "ServiceLoadBalancer" ]
         },
@@ -291,7 +291,7 @@
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "static" ] ]} }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/ecs-service.json"
             },
             "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "ImagesListenerRule", "StylesListenerRule" ]
         },

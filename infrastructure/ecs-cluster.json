@@ -99,7 +99,7 @@
                 "Tags" : [
                     { "Key": "Name", "Value": { "Fn::Join": [ "-", [ { "Ref": "Name" }, "ecs" ]] } }
                 ],
-                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/az-subnets.json"
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-infrastructure/az-subnets.json"
             }
         },
 
