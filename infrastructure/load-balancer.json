@@ -76,7 +76,7 @@
 				"Port" : 80,
 				"Protocol" : "HTTP"
 			},
-			"DependsOn": [ "LoadBalancer", "DefaultTargetGroup" ]
+			"DependsOn": [ "LoadBalancer" ]
 		},
 
 		"LBSecurityGroup" : {
@@ -92,7 +92,6 @@
 
 		"LBSecurityGroupHTTPIngress": {
 			"Type": "AWS::EC2::SecurityGroupIngress",
-			"Condition": "CreateHTTPListener",
 			"Properties" : {
 				"IpProtocol" : "tcp",
 				"CidrIp" : "0.0.0.0/0",
@@ -148,7 +147,7 @@
 
 		"HTTPListenerArn": {
 			"Description": "Load balancer HTTP listener ARN",
-			"Value": { "Fn::If": [ "CreateHTTPListener", { "Ref": "HTTPListener" }, "" ] }
+			"Value": { "Ref": "HTTPListener" }
 		}
 	}
 }

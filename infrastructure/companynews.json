@@ -183,7 +183,6 @@
             "Properties" : {
                 "Parameters" : {
                     "Name": { "Ref": "AWS::StackName" },
-                    "SSLCertId": "",
                     "VPCId": { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
                     "SubnetIDs": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SubnetIdList" ] },
                     "DestSecurityGroupId": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SecurityGroupId" ] },
@@ -207,7 +206,7 @@
                 "HealthCheckTimeoutSeconds": 3,
                 "HealthyThresholdCount": 2,
                 "Matcher" : { "HttpCode" : "200" },
-                "Name" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "companynews" ] ]},
+                "Name" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "cn" ] ]},
                 "Port" : 80,
                 "Protocol" : "HTTP",
                 "UnhealthyThresholdCount": 5,
@@ -244,7 +243,7 @@
                 ],
                 "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
             },
-            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "CompanyNewsTargetGroup" ]
+            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "ServiceLoadBalancer" ]
         },
 
         "StaticTargetGroup": {
