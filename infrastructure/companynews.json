@@ -281,7 +281,7 @@
                     "ContainerPort": 80,
                     "ContainerMemory": 256,
                     "HostPort": 0,
-                    "ImageId": { "Fn::Join" : [ ":", [ { "Ref": "CompanyNewsECR" }, { "Ref": "Environment" } ] ]},
+                    "ImageId": { "Fn::Join" : [ ":", [ { "Ref": "StaticECR" }, { "Ref": "Environment" } ] ]},
                     "TargetGroupArn": { "Ref": "StaticTargetGroup" },
                     "TaskRoleArn": { "Fn::GetAtt" : [ "ECSClusterServicesRole", "Arn" ] },
                     "DesiredTaskCount": 1,
