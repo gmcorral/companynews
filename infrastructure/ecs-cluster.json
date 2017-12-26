@@ -267,7 +267,6 @@
                 "InstanceType"   : { "Ref" : "InstanceType" },
                 "IamInstanceProfile": { "Ref": "EC2InstanceProfile" },
                 "SecurityGroups": [ { "Ref": "ECSSecurityGroup" } ],
-                "KeyName"        : "personal-key",
                 "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash -xe\n",
                     "yum install -y aws-cfn-bootstrap\n",
