@@ -32,6 +32,7 @@ CF_STACK_NAME=companynews-$ENV
 
 AWS_CLI=$(which aws)
 DOCKER_CLI=$(which docker)
+JQ_BIN=$(which jq)
 
 if [ -z "$AWS_CLI" ]; then
 
@@ -53,6 +54,7 @@ if [ -z "$DOCKER_CLI" ]; then
 
     echo "Docker CLI not found on local machine, installing.."
 
+    sudo apt-get update
     sudo apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net:80 --recv-keys 58118E89F3A912897C070ADBF76221572C52609D
     sudo apt-add-repository 'deb https://apt.dockerproject.org/repo ubuntu-xenial main'
     sudo apt-get update
@@ -67,6 +69,19 @@ if [ -z "$DOCKER_CLI" ]; then
     fi
 fi
 
+if [ -z "$JQ_BIN" ]; then
+
+    echo "JQ not found on local machine, installing.."
+
+    sudo apt-get update
+    sudo apt-get install jq
+
+    JQ_BIN=$(which jq)
+    if [ -z "$JQ_BIN" ]; then
+        echo " ** ERROR: couldn't install JQ"
+        exit 1
+    fi
+fi
 
 echo ""
 echo " *********************************************"
