@@ -187,18 +187,39 @@
                     "VPCId": { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
                     "SubnetIDs": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SubnetIdList" ] },
                     "DestSecurityGroupId": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SecurityGroupId" ] },
-                    "DefaultContainerPort": 80,
-                    "DefaultContainerName": "companynews",
-                    "DefaultHealthCheckPath": "/",
-                    "ListenToHTTPTraffic": "true",
-                    "ListenToHTTPSTraffic": "false"
+                    "DefaultTargetGroupId": { "Ref": "CompanyNewsTargetGroup" }
                 },
                 "Tags" : [ 
                     { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
                 ],
                 "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/load-balancer.json"
             },
-            "DependsOn": [ "VPC", "ECSCluster" ]
+            "DependsOn": [ "VPC", "ECSCluster", "CompanyNewsTargetGroup" ]
+        },
+
+        "CompanyNewsTargetGroup": {
+            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties" : {
+                "HealthCheckIntervalSeconds": 20,
+                "HealthCheckPath": "/",
+                "HealthCheckPort": "traffic-port",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 3,
+                "HealthyThresholdCount": 2,
+                "Matcher" : { "HttpCode" : "200" },
+                "Name" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "companynews" ] ]},
+                "Port" : 80,
+                "Protocol" : "HTTP",
+                "UnhealthyThresholdCount": 5,
+                "TargetGroupAttributes" : [
+                    { "Key" : "deregistration_delay.timeout_seconds", "Value" : 5 }
+                ],
+                "VpcId" : { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "companynews" ]]} }
+                ]
+            },
+            "DependsOn": [ "VPC" ]
         },
 
         "CompanyNewsService": {
@@ -212,7 +233,7 @@
                     "ContainerMemory": 512,
                     "HostPort": 0,
                     "ImageId": { "Fn::Join" : [ ":", [ { "Ref": "CompanyNewsECR" }, { "Ref": "Environment" } ] ]},
-                    "TargetGroupArn": { "Fn::GetAtt" : [ "ServiceLoadBalancer", "Outputs.DefaultTargetGroupArn" ] },
+                    "TargetGroupArn": { "Ref": "CompanyNewsTargetGroup" },
                     "TaskRoleArn": { "Fn::GetAtt" : [ "ECSClusterServicesRole", "Arn" ] },
                     "DesiredTaskCount": 1,
                     "MinCapacity": 1,
@@ -223,7 +244,32 @@
                 ],
                 "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
             },
-            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole" ]
+            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "CompanyNewsTargetGroup" ]
+        },
+
+        "StaticTargetGroup": {
+            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties" : {
+                "HealthCheckIntervalSeconds": 20,
+                "HealthCheckPath": "/companyNews/styles/company.css",
+                "HealthCheckPort": "traffic-port",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 3,
+                "HealthyThresholdCount": 2,
+                "Matcher" : { "HttpCode" : "200" },
+                "Name" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "static" ] ]},
+                "Port" : 80,
+                "Protocol" : "HTTP",
+                "UnhealthyThresholdCount": 5,
+                "TargetGroupAttributes" : [
+                    { "Key" : "deregistration_delay.timeout_seconds", "Value" : 5 }
+                ],
+                "VpcId" : { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "static" ]]} }
+                ]
+            },
+            "DependsOn": [ "VPC" ]
         },
 
         "StaticService": {
@@ -249,31 +295,6 @@
                 "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
             },
             "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "ImagesListenerRule", "StylesListenerRule" ]
-        },
-
-        "StaticTargetGroup": {
-            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
-            "Properties" : {
-                "HealthCheckIntervalSeconds": 20,
-                "HealthCheckPath": "/companyNews/styles/company.css",
-                "HealthCheckPort": "traffic-port",
-                "HealthCheckProtocol": "HTTP",
-                "HealthCheckTimeoutSeconds": 3,
-                "HealthyThresholdCount": 2,
-                "Matcher" : { "HttpCode" : "200" },
-                "Name" : "static",
-                "Port" : 80,
-                "Protocol" : "HTTP",
-                "UnhealthyThresholdCount": 5,
-                "TargetGroupAttributes" : [
-                    { "Key" : "deregistration_delay.timeout_seconds", "Value" : 5 }
-                ],
-                "VpcId" : { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
-                "Tags" : [ 
-                    { "Key": "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "static" ]]} }
-                ]
-            },
-            "DependsOn": [ "VPC" ]
         },
 
         "ImagesListenerRule": {
