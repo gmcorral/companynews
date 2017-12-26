@@ -1,0 +1,358 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "ECS cluster with autoscaling group",
+
+    "Parameters" :
+    {
+
+        "Name": {
+            "Description" : "Name of the ECS cluster",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "SSHLocation" : {
+            "Description" : "The IP address range that can be used to SSH to the EC2 instances",
+            "Type": "String",
+            "MinLength": 9,
+            "MaxLength": 18,
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x"
+        },
+
+        "VPCId": {
+            "Description" : "ID of the container VPC",
+            "Type": "AWS::EC2::VPC::Id",
+            "ConstraintDescription" : "must be a valid VPC ID"
+        },
+
+        "IGId": {
+            "Description" : "ID of the VPC Internet GW",
+            "Type": "String",
+            "AllowedPattern": "igw-(.){8}",
+            "ConstraintDescription" : "must be a valid Internet GW ID"
+        },
+
+        "CidrBlocks": {
+            "Description": "Comma-delimited list of 3 server subnets CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+
+        "AMIId": {
+            "Description" : "AMI for ECS container instances",
+            "Type": "AWS::EC2::Image::Id",
+            "ConstraintDescription" : "must be a valid AMI ID"
+        },
+
+        "InstanceType" : {
+            "Description" : "ECS container instances type",
+            "Type" : "String",
+            "Default" : "t2.micro",
+            "AllowedValues" : [ "t1.micro", "t2.micro", "t2.small", "t2.medium", "m1.small", "m1.medium", "m1.large", "m1.xlarge", 
+                                "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c1.medium",
+                                "c1.xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "g2.2xlarge", "r3.large",
+                                "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge",
+                                "hi1.4xlarge", "hs1.8xlarge", "cr1.8xlarge", "cc2.8xlarge", "cg1.4xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type"
+        },
+
+        "InstanceRole": {
+            "Description" : "Name of the managed role for the EC2 instances of the ECS cluster",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+        
+        "MinSize": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Minimum number of instances that can be launched in the ECS cluster."
+        },
+
+        "DesiredCapacity": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Number of instances to initially launch in the ECS cluster."
+        },
+    
+        "MaxSize": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Maximum number of instances that can be launched in the ECS cluster."
+        }
+
+    },
+
+    "Resources" :
+    {
+
+        "ECSSubnets": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Name": { "Fn::Join": [ "-", [ { "Ref": "Name" }, "ecs" ]] },
+                    "VPCId": { "Ref": "VPCId" },
+                    "CidrBlocks": { "Fn::Join": [ ",", { "Ref": "CidrBlocks" } ] },
+                    "IGId": { "Ref": "IGId" }
+                },
+                "Tags" : [
+                    { "Key": "Name", "Value": { "Fn::Join": [ "-", [ { "Ref": "Name" }, "ecs" ]] } }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/az-subnets.json"
+            }
+        },
+
+        "ECSCluster": {
+            "Type" : "AWS::ECS::Cluster"
+        },
+
+        "ECSAutoScalingGroup" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "VPCZoneIdentifier" : [ {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetA"] }, {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetB"] }, {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetC"] } ],
+                "LaunchConfigurationName" : { "Ref" : "ECSInstances" },
+                "MinSize" : { "Ref" : "MinSize" },
+                "MaxSize" : { "Ref" : "MaxSize" },
+                "DesiredCapacity" : { "Ref" : "DesiredCapacity" },
+                "Tags" : [
+                    { "Key": "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "Name" }, "ecs" ] ] }, "PropagateAtLaunch": true }
+                ]
+            },
+            "CreationPolicy" : {
+                "ResourceSignal" : {
+                    "Timeout" : "PT15M"
+                }
+            },
+            "UpdatePolicy": {
+                "AutoScalingRollingUpdate": {
+                    "MinInstancesInService": 0,
+                    "MaxBatchSize": 1,
+                    "PauseTime" : "PT15M",
+                    "WaitOnResourceSignals": "true"
+                }
+            },
+            "DependsOn": [ "ECSInstances", "ECSSubnets" ]
+        },
+
+        "ScaleUpPolicy" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "ECSAutoScalingGroup" },
+                "Cooldown" : 120,
+                "ScalingAdjustment" : 1
+            },
+            "DependsOn": "ECSAutoScalingGroup"
+        },
+
+        "ScaleDownPolicy" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "ECSAutoScalingGroup" },
+                "Cooldown" : 120,
+                "ScalingAdjustment" : -1
+            },
+            "DependsOn": "ECSAutoScalingGroup"
+        },
+
+        "CPUAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": 2,
+                "Statistic": "Average",
+                "Threshold": 80,
+                "AlarmDescription": "Alarm if CPU too high or metric disappears indicating instance is down",
+                "Period": 60,
+                "AlarmActions": [ { "Ref": "ScaleUpPolicy" } ],
+                "Namespace": "AWS/EC2",
+                "Dimensions": [ {
+                    "Name": "AutoScalingGroupName",
+                    "Value": { "Ref": "ECSAutoScalingGroup" }
+                } ],
+                "ComparisonOperator": "GreaterThanThreshold",
+                "MetricName": "CPUUtilization"
+            },
+            "DependsOn": "ScaleUpPolicy"
+        },    
+
+        "MemoryAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": 5,
+                "Statistic": "Average",
+                "Threshold": 80,
+                "AlarmDescription": "Alarm if reserved memory too high or metric disappears indicating service is down",
+                "Period": 60,
+                "AlarmActions": [ { "Ref": "ScaleUpPolicy" } ],
+                "Namespace": "AWS/ECS",
+                "Dimensions": [ {
+                    "Name": "ClusterName",
+                    "Value": { "Ref": "ECSCluster" }
+                } ],
+                "ComparisonOperator": "GreaterThanThreshold",
+                "MetricName": "MemoryReservation"
+            },
+            "DependsOn": "ScaleUpPolicy"
+        },
+
+        "MemoryAlarmLow": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": 10,
+                "Statistic": "Average",
+                "Threshold": 30,
+                "AlarmDescription": "Alarm if reserved memory too low",
+                "Period": 60,
+                "AlarmActions": [ { "Ref": "ScaleDownPolicy" } ],
+                "Namespace": "AWS/ECS",
+                "Dimensions": [ {
+                    "Name": "ClusterName",
+                    "Value": { "Ref": "ECSCluster" }
+                } ],
+                "ComparisonOperator": "LessThanThreshold",
+                "MetricName": "MemoryReservation"
+            },
+            "DependsOn": "ScaleDownPolicy"
+        },
+
+    "ECSInstances": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                    
+                        "commands" : {
+                            "01_add_instance_to_cluster" : {
+                            "command" : { "Fn::Join": [ "", [ "#!/bin/bash\n", "echo ECS_CLUSTER=", { "Ref": "ECSCluster" }, " >> /etc/ecs/ecs.config" ] ] }
+                            }
+                        },
+                        
+                        "files" : {
+                            "/etc/cfn/cfn-hup.conf" : {
+                                "content" : { "Fn::Join" : ["", [
+                                    "[main]\n",
+                                    "stack=", { "Ref" : "AWS::StackId" }, "\n",
+                                    "region=", { "Ref" : "AWS::Region" }, "\n"
+                                ]]},
+                                "mode"    : "000400",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
+                                "content": { "Fn::Join" : ["", [
+                                    "[cfn-auto-reloader-hook]\n",
+                                    "triggers=post.update\n",
+                                    "path=Resources.ECSInstances.Metadata.AWS::CloudFormation::Init\n",
+                                    "action=/opt/aws/bin/cfn-init -v ",
+                                    "         --stack ", { "Ref" : "AWS::StackName" },
+                                    "         --resource ECSInstances ",
+                                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                                    "runas=root\n"
+                                ]]}
+                            }
+                        },
+
+                        "services" : {
+                            "sysvinit" : {
+                                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true", "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"] }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId" : { "Ref" : "AMIId" },
+                "InstanceType"   : { "Ref" : "InstanceType" },
+                "IamInstanceProfile": { "Ref": "EC2InstanceProfile" },
+                "SecurityGroups": [ { "Ref": "ECSSecurityGroup" } ],
+                "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash -xe\n",
+                    "yum install -y aws-cfn-bootstrap\n",
+
+                    "/opt/aws/bin/cfn-init -v ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource ECSInstances ",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                    "/opt/aws/bin/cfn-signal -e $? ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource ECSAutoScalingGroup ",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]}}
+            },
+            "DependsOn": "EC2InstanceProfile"
+        },
+
+        "ECSSecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable HTTP and SSH access",
+                "SecurityGroupIngress" : [
+                    {"IpProtocol" : "tcp", "FromPort" : 22, "ToPort" : 22, "CidrIp" : { "Ref" : "SSHLocation"}}
+                ],
+                "SecurityGroupEgress" : [
+                    {"IpProtocol" : "-1", "FromPort" : -1, "ToPort" : -1, "CidrIp" : "0.0.0.0/0"}
+                ],
+                "VpcId": { "Ref" : "VPCId" },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "Name" }, "ecs" ] ]} }
+                ]
+                
+            }
+        },
+
+        "EC2Role": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [
+                                "ec2.amazonaws.com"
+                            ]
+                        },
+                        "Action": [
+                            "sts:AssumeRole"
+                        ]
+                    }
+                    ]
+                },
+                "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role", { "Ref" : "InstanceRole" } ],
+                "Path": "/"
+            }
+        },
+
+        "EC2InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    { "Ref": "EC2Role" }
+                ]
+            },
+            "DependsOn": "EC2Role"
+        }
+    }, 
+
+    "Outputs" :
+    {
+        "ClusterId": {
+            "Description": "ECS cluster ID",
+            "Value": { "Ref": "ECSCluster" }
+        },
+
+        "SecurityGroupId": {
+            "Description": "Cluster instances security group",
+            "Value": { "Ref": "ECSSecurityGroup" }
+        },
+
+        "SubnetIdList": {
+            "Description": "List of cluster subnet IDs",
+            "Value": { "Fn::Join": [ ",", [ {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetA"] }, {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetB"] }, {"Fn::GetAtt": [ "ECSSubnets", "Outputs.SubnetC"] } ] ] }
+        }
+    }
+}

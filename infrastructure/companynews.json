@@ -1,0 +1,320 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Thoughtworks CompanyNews project",
+    "Parameters" :
+    {
+        "Environment" : {
+            "Description" : "Deployment environment",
+            "Type" : "String",
+            "Default" : "training",
+            "AllowedValues" : [ "training", "production" ],
+            "ConstraintDescription" : "must be a valid deplyment environment"
+        },
+
+        "InstanceType" : {
+            "Description" : "ECS container instances type",
+            "Type" : "String",
+            "Default" : "t2.micro",
+            "AllowedValues" : [ "t1.micro", "t2.micro", "t2.small", "t2.medium", "m1.small", "m1.medium", "m1.large", "m1.xlarge", 
+                                "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c1.medium",
+                                "c1.xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "g2.2xlarge", "r3.large",
+                                "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge",
+                                "hi1.4xlarge", "hs1.8xlarge", "cr1.8xlarge", "cc2.8xlarge", "cg1.4xlarge" ],
+            "ConstraintDescription" : "must be a valid EC2 instance type"
+        },
+
+        "CompanyNewsECR": {
+            "Description" : "CompanyNews Docker registry URI",
+            "Type" : "String"
+        },
+
+        "StaticECR": {
+            "Description" : "Static Docker registry URI",
+            "Type" : "String"
+        }
+    },
+
+    "Mappings" :
+    {
+        "RegionToAMI" : {
+            "us-east-2": { "AMIId" : "ami-58f5db3d" },
+            "us-east-1": { "AMIId" : "ami-fad25980" },
+            "us-west-2": { "AMIId" : "ami-7114c909" },
+            "us-west-1": { "AMIId" : "ami-62e0d802" },
+            "eu-west-3": { "AMIId" : "ami-d179ceac" },
+            "eu-west-2": { "AMIId" : "ami-dbfee1bf" },
+            "eu-west-1": { "AMIId" : "ami-4cbe0935" }
+        },
+        
+        "EnvironmentConfig" : {
+            "training": {
+                "MaxClusterSize": 1,
+                "MaxServiceSize": 1
+            },
+            "production": {
+                "MaxClusterSize": 10,
+                "MaxServiceSize": 20
+            }
+        }
+    },
+    
+    "Resources" :
+    {
+        
+        "VPC": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Name": { "Ref": "AWS::StackName" },
+                    "CIDRBlock": "10.0.0.0/16"
+                },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/vpc.json"
+            }
+        },
+
+        "ECSClusterServicesRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Path": "/",
+                "RoleName": { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "ecs-services" ] ] },
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [ {
+                        "Sid": "",
+                        "Effect": "Allow",
+                        "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+                        "Action": "sts:AssumeRole"
+                    } ]
+                },
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version" : "2012-10-17",
+                            "Statement": [ {
+                                "Effect": "Allow",
+                                "Action": [ "ecs:*" ],
+                                "Resource": "*"
+                            } ]
+                        },
+                        "PolicyName": "ecs"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version" : "2012-10-17",
+                            "Statement": [ {
+                                "Effect": "Allow",
+                                "Action": [ "elasticloadbalancing:*" ],
+                                "Resource": "*"
+                            } ]
+                        },
+                        "PolicyName": "elb"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version" : "2012-10-17",
+                            "Statement": [ {
+                                "Action": "cloudformation:*",
+                                "Resource": "*",
+                                "Effect": "Allow"
+                            } ]
+                        },
+                        "PolicyName": "cloudformation"
+                    }
+                ]
+            }
+        },
+
+        "ECSClusterInstanceRole": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Description": "Policy for ECS cluster instances",
+                "Path": "/",
+                "PolicyDocument": {
+                    "Version" : "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents",
+                                "logs:DescribeLogStreams"
+                            ],
+                            "Resource": "arn:aws:logs:*:*:*",
+                            "Effect": "Allow"
+                        },
+                        {
+                            "Action": "cloudwatch:PutMetricData",
+                            "Resource": "*",
+                            "Effect": "Allow"
+                        }
+                    ]
+                }
+            }
+        },
+
+        "ECSCluster": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Name": { "Ref": "AWS::StackName" },
+                    "VPCId": { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
+                    "IGId": { "Fn::GetAtt" : [ "VPC", "Outputs.IGId" ] },
+                    "CidrBlocks": "10.0.7.0/24,10.0.8.0/24,10.0.9.0/24",
+                    "AMIId": { "Fn::FindInMap" : [ "RegionToAMI", { "Ref" : "AWS::Region" }, "AMIId" ] },
+                    "InstanceType" : { "Ref": "InstanceType" },
+                    "InstanceRole": { "Ref": "ECSClusterInstanceRole" },
+                    "MinSize": 1,
+                    "DesiredCapacity": 1,
+                    "MaxSize": { "Fn::FindInMap" : [ "EnvironmentConfig", { "Ref" : "Environment" }, "MaxClusterSize" ] }
+                },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-cluster.json"
+            },
+            "DependsOn": [ "VPC", "ECSClusterInstanceRole" ]
+        },
+
+        "ServiceLoadBalancer": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Name": { "Ref": "AWS::StackName" },
+                    "SSLCertId": "",
+                    "VPCId": { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
+                    "SubnetIDs": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SubnetIdList" ] },
+                    "DestSecurityGroupId": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.SecurityGroupId" ] },
+                    "DefaultContainerPort": 80,
+                    "DefaultContainerName": "companynews",
+                    "DefaultHealthCheckPath": "/",
+                    "ListenToHTTPTraffic": "true",
+                    "ListenToHTTPSTraffic": "false"
+                },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Ref": "AWS::StackName" } }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/load-balancer.json"
+            },
+            "DependsOn": [ "VPC", "ECSCluster" ]
+        },
+
+        "CompanyNewsService": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Application": { "Ref": "AWS::StackName" },
+                    "ECSClusterId": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.ClusterId" ] },
+                    "ContainerName": "companynews",
+                    "ContainerPort": 8080,
+                    "ContainerMemory": 512,
+                    "HostPort": 0,
+                    "ImageId": { "Fn::Join" : [ ":", [ { "Ref": "CompanyNewsECR" }, { "Ref": "Environment" } ] ]},
+                    "TargetGroupArn": { "Fn::GetAtt" : [ "ServiceLoadBalancer", "Outputs.DefaultTargetGroupArn" ] },
+                    "TaskRoleArn": { "Fn::GetAtt" : [ "ECSClusterServicesRole", "Arn" ] },
+                    "DesiredTaskCount": 1,
+                    "MinCapacity": 1,
+                    "MaxCapacity": { "Fn::FindInMap" : [ "EnvironmentConfig", { "Ref" : "Environment" }, "MaxServiceSize" ] }
+                },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "companynews" ] ]} }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
+            },
+            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole" ]
+        },
+
+        "StaticService": {
+            "Type" : "AWS::CloudFormation::Stack",
+            "Properties" : {
+                "Parameters" : {
+                    "Application": { "Ref": "AWS::StackName" },
+                    "ECSClusterId": { "Fn::GetAtt" : [ "ECSCluster", "Outputs.ClusterId" ] },
+                    "ContainerName": "static",
+                    "ContainerPort": 80,
+                    "ContainerMemory": 256,
+                    "HostPort": 0,
+                    "ImageId": { "Fn::Join" : [ ":", [ { "Ref": "CompanyNewsECR" }, { "Ref": "Environment" } ] ]},
+                    "TargetGroupArn": { "Ref": "StaticTargetGroup" },
+                    "TaskRoleArn": { "Fn::GetAtt" : [ "ECSClusterServicesRole", "Arn" ] },
+                    "DesiredTaskCount": 1,
+                    "MinCapacity": 1,
+                    "MaxCapacity": 1
+                },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref": "AWS::StackName" }, "static" ] ]} }
+                ],
+                "TemplateURL" : "https://s3.amazonaws.com/thoughtworks-companynews-code/ecs-service.json"
+            },
+            "DependsOn": [ "VPC", "ECSCluster", "ECSClusterServicesRole", "ImagesListenerRule", "StylesListenerRule" ]
+        },
+
+        "StaticTargetGroup": {
+            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties" : {
+                "HealthCheckIntervalSeconds": 20,
+                "HealthCheckPath": "/companyNews/styles/company.css",
+                "HealthCheckPort": "traffic-port",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 3,
+                "HealthyThresholdCount": 2,
+                "Matcher" : { "HttpCode" : "200" },
+                "Name" : "static",
+                "Port" : 80,
+                "Protocol" : "HTTP",
+                "UnhealthyThresholdCount": 5,
+                "TargetGroupAttributes" : [
+                    { "Key" : "deregistration_delay.timeout_seconds", "Value" : 5 }
+                ],
+                "VpcId" : { "Fn::GetAtt" : [ "VPC", "Outputs.VPCId" ] },
+                "Tags" : [ 
+                    { "Key": "Name", "Value" : { "Fn::Join": [ "-", [ { "Ref": "AWS::StackName" }, "static" ]]} }
+                ]
+            },
+            "DependsOn": [ "VPC" ]
+        },
+
+        "ImagesListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "Actions": [
+                    { "Type": "forward", "TargetGroupArn": { "Ref": "StaticTargetGroup" } }
+                ],
+                "Conditions": [
+                    { "Field": "path-pattern", "Values": [ "/companyNews/images/*" ] }
+                ],
+                "ListenerArn": { "Fn::GetAtt" : [ "ServiceLoadBalancer", "Outputs.HTTPListenerArn" ] },
+                "Priority": 1
+            },
+            "DependsOn": [ "StaticTargetGroup", "ServiceLoadBalancer" ]
+        },
+
+        "StylesListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "Actions": [
+                    { "Type": "forward", "TargetGroupArn": { "Ref": "StaticTargetGroup" } }
+                ],
+                "Conditions": [
+                    { "Field": "path-pattern", "Values": [ "/companyNews/styles/*" ] }
+                ],
+                "ListenerArn": { "Fn::GetAtt" : [ "ServiceLoadBalancer", "Outputs.HTTPListenerArn" ] },
+                "Priority": 2
+            },
+            "DependsOn": [ "StaticTargetGroup", "ServiceLoadBalancer" ]
+        }
+    },
+
+    "Outputs" :
+    {
+        "CompanyNewsURL": {
+            "Description": "CompanyNews access URL",
+            "Value": { "Fn::Join": [ "", [
+                "http://",
+                { "Fn::GetAtt": [ "ServiceLoadBalancer", "Outputs.DNSName" ]}
+            ] ] }
+        }
+    }
+}

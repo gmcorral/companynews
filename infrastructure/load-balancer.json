@@ -1,0 +1,260 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Description" : "HTTPS internet facing v2 load balancer with a default listener and target group",
+
+	"Parameters" :
+	{
+
+		"Name": {
+			"Description" : "Name of the LB",
+			"Type": "String",
+			"ConstraintDescription" : "can contain only ASCII characters"
+		},
+
+		"VPCId": {
+			"Description" : "ID of the container VPC",
+			"Type": "AWS::EC2::VPC::Id",
+			"ConstraintDescription" : "must be a valid VPC ID"
+		},
+
+		"SubnetIDs": {
+			"Description": "Comma-delimited list of VPC subnet IDs",
+			"Type": "List<AWS::EC2::Subnet::Id>"
+		},
+
+		"DestSecurityGroupId": {
+			"Description" : "ID of the destination (instance) security group",
+			"Type": "AWS::EC2::SecurityGroup::Id",
+			"ConstraintDescription" : "must be a valid security group ID"
+		},
+
+		"DefaultContainerPort": {
+			"Type": "Number",
+			"Default" : 0,
+			"Description": "Container listening port"
+		},
+
+		"DefaultContainerName": {
+			"Description" : "Name of the default LB container",
+			"Type": "String",
+			"ConstraintDescription" : "can contain only ASCII characters"
+		},
+
+		"DefaultHealthCheckPath": {
+			"Description" : "Name of the default target group health check path",
+			"Type": "String",
+			"ConstraintDescription" : "can contain only ASCII characters"
+		},
+
+		"ListenToHTTPTraffic": {
+			"Description" : "Indicates if load balancer should listen to HTTP traffic",
+			"Type": "String",
+			"AllowedValues" : [ "true", "false" ],
+			"ConstraintDescription" : "should be true or false"
+		},
+
+		"ListenToHTTPSTraffic": {
+			"Description" : "Indicates if load balancer should listen to HTTPS traffic",
+			"Type": "String",
+			"AllowedValues" : [ "true", "false" ],
+			"ConstraintDescription" : "should be true or false"
+		},
+
+		"SSLCertId": {
+			"Description" : "Load Balancer SSL certificate ID, if HTTPS listener is active",
+			"Type": "String",
+			"Default": "",
+			"ConstraintDescription" : "can contain only ASCII characters"
+		}
+
+	},
+
+	"Conditions" : {
+		"CreateHTTPListener" : { "Fn::Equals" : [ {"Ref" : "ListenToHTTPTraffic"}, "true" ] },
+		"CreateHTTPSListener" : { "Fn::Equals" : [ {"Ref" : "ListenToHTTPSTraffic"}, "true" ] }
+	},
+
+
+	"Resources" :
+	{
+
+		"LoadBalancer" : {
+			"Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+			"Properties" : {
+				"LoadBalancerAttributes" : [ 
+					{
+						"Key": "deletion_protection.enabled",
+						"Value": false
+					},
+					{
+						"Key": "idle_timeout.timeout_seconds",
+						"Value": 60
+					}
+				],
+				"Name": { "Ref" : "Name" },
+				"Scheme" : "internet-facing",
+				"SecurityGroups" : [ { "Ref": "LBSecurityGroup" } ],
+				"Subnets" : { "Ref": "SubnetIDs" },
+				"Tags" : [ 
+					{ "Key": "Name", "Value" : { "Ref" : "Name" } }
+				]
+			},
+			"DependsOn" : "LBSecurityGroup"
+		},
+
+		"DefaultTargetGroup": {
+			"Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+			"Properties" : {
+				"HealthCheckIntervalSeconds": 20,
+				"HealthCheckPath": { "Ref": "DefaultHealthCheckPath" },
+				"HealthCheckPort": "traffic-port",
+				"HealthCheckProtocol": "HTTP",
+				"HealthCheckTimeoutSeconds": 3,
+				"HealthyThresholdCount": 2,
+				"Matcher" : { "HttpCode" : "200" },
+				"Name" : { "Ref": "DefaultContainerName" },
+				"Port" : { "Ref": "DefaultContainerPort" },
+				"Protocol" : "HTTP",
+				"UnhealthyThresholdCount": 5,
+				"TargetGroupAttributes" : [
+					{ "Key" : "deregistration_delay.timeout_seconds", "Value" : 5 }
+				],
+				"VpcId" : { "Ref": "VPCId" },
+				"Tags" : [ 
+					{ "Key": "Name", "Value" : { "Ref" : "DefaultContainerName" } }
+				]
+			}
+		},
+
+		"HTTPSListener": {
+			"Type" : "AWS::ElasticLoadBalancingV2::Listener",
+			"Condition": "CreateHTTPSListener",
+			"Properties" : {
+				"Certificates" : [ { "CertificateArn": { "Ref": "SSLCertId" } } ],
+				"DefaultActions" : [
+				{
+					"TargetGroupArn": { "Ref": "DefaultTargetGroup" },
+					"Type": "forward"
+				}
+				],
+				"LoadBalancerArn" : { "Ref": "LoadBalancer" },
+				"Port" : 443,
+				"Protocol" : "HTTPS"
+			},
+			"DependsOn": [ "LoadBalancer", "DefaultTargetGroup" ]
+		},
+
+		"HTTPListener": {
+			"Type" : "AWS::ElasticLoadBalancingV2::Listener",
+			"Condition": "CreateHTTPListener",
+			"Properties" : {
+				"DefaultActions" : [
+					{
+						"TargetGroupArn": { "Ref" : "DefaultTargetGroup" },
+						"Type": "forward"
+					}
+				],
+				"LoadBalancerArn" : { "Ref": "LoadBalancer" },
+				"Port" : 80,
+				"Protocol" : "HTTP"
+			},
+			"DependsOn": [ "LoadBalancer", "DefaultTargetGroup" ]
+		},
+
+		"LBSecurityGroup" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Enable inbound HTTPS and outbound HTTP",
+				"VpcId": { "Ref" : "VPCId" },
+				"Tags" : [ 
+					{ "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "Name" }, "lb" ] ]} }
+				]
+			}
+		},
+
+		"LBSecurityGroupHTTPSIngress": {
+			"Type": "AWS::EC2::SecurityGroupIngress",
+			"Condition": "CreateHTTPSListener",
+			"Properties" : {
+				"IpProtocol" : "tcp",
+				"CidrIp" : "0.0.0.0/0",
+				"FromPort" : 443,
+				"ToPort" : 443,
+				"GroupId" : { "Fn::GetAtt": [ "LBSecurityGroup", "GroupId" ] }
+			},
+			"DependsOn": [ "LBSecurityGroup" ]
+		},
+
+		"LBSecurityGroupHTTPIngress": {
+			"Type": "AWS::EC2::SecurityGroupIngress",
+			"Condition": "CreateHTTPListener",
+			"Properties" : {
+				"IpProtocol" : "tcp",
+				"CidrIp" : "0.0.0.0/0",
+				"FromPort" : 80,
+				"ToPort" : 80,
+				"GroupId" : { "Fn::GetAtt": [ "LBSecurityGroup", "GroupId" ] }
+			},
+			"DependsOn": [ "LBSecurityGroup" ]
+		},
+
+		"LBSecurityGroupEgress": {
+			"Type": "AWS::EC2::SecurityGroupEgress",
+			"Properties":{
+				"IpProtocol": "tcp",
+				"FromPort": 32768,
+				"ToPort": 61000,
+				"DestinationSecurityGroupId": { "Ref": "DestSecurityGroupId" },
+				"GroupId": { "Fn::GetAtt": [ "LBSecurityGroup", "GroupId" ] }
+			},
+			"DependsOn": [ "LBSecurityGroup" ]
+		},
+
+		"DestSecurityGroupIngress": {
+			"Type": "AWS::EC2::SecurityGroupIngress",
+			"Properties": {
+				"IpProtocol" : "tcp",
+				"FromPort" : 32768,
+				"ToPort" : 61000,
+				"SourceSecurityGroupId": { "Fn::GetAtt": [ "LBSecurityGroup", "GroupId" ]},
+				"GroupId": { "Ref": "DestSecurityGroupId" }
+			},
+			"DependsOn": [ "LBSecurityGroup" ]
+		}
+
+	},
+
+	"Outputs" :
+	{
+		"URL": {
+			"Description": "Load balancer internet-facing URL",
+			"Value": { "Fn::Join": [ "", [ "https://", { "Fn::GetAtt": [ "LoadBalancer", "DNSName" ]}]]}
+		},
+
+		"DNSName": {
+			"Description": "Load balancer DNS name",
+			"Value": { "Fn::GetAtt": [ "LoadBalancer", "DNSName" ]}
+		},
+
+		"LoadBalancerArn": {
+			"Description": "Load balancer ARN",
+			"Value": { "Ref": "LoadBalancer" }
+		},
+
+		"DefaultTargetGroupArn": {
+			"Description": "Load balancer default target group ARN",
+			"Value": { "Ref": "DefaultTargetGroup" }
+		},
+
+		"HTTPListenerArn": {
+			"Description": "Load balancer HTTP listener ARN",
+			"Value": { "Fn::If": [ "CreateHTTPListener", { "Ref": "HTTPListener" }, "" ] }
+		},
+
+		"HTTPSListenerArn": {
+			"Description": "Load balancer HTTPS listener ARN",
+			"Value": { "Fn::If": [ "CreateHTTPSListener", { "Ref": "HTTPSListener" }, "" ] }
+		}
+	}
+}

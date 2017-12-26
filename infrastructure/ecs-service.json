@@ -1,0 +1,273 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "ECS service and task definition with service autoscaling",
+
+    "Parameters" :
+    {
+
+        "Application": {
+            "Description" : "Name of the application",
+            "Type": "String",
+            "ConstraintDescription" : "must be a valid application name"
+        },
+
+        "ECSClusterId": {
+            "Description" : "ID of the ECS cluster where the service will be deployed",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "ContainerName": {
+            "Description" : "Name of the ECS container defined in the task definition",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "ContainerPort": {
+            "Type": "Number",
+            "Default" : 8080,
+            "Description": "Service listening port inside container, will be mapped to host port"
+        },
+
+        "ContainerMemory": {
+            "Type": "Number",
+            "Default" : 256,
+            "Description": "Container memory size"
+        },
+
+        "HostPort": {
+            "Type": "Number",
+            "Default" : 0,
+            "Description": "Host external listening port mapped to container port"
+        },
+
+        "ImageId": {
+            "Description" : "ID of the Docker image in the repository",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "TargetGroupArn": {
+            "Description" : "ARN of the load balancer target group",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "TaskRoleArn": {
+            "Description" : "ARN of this task role",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "DesiredTaskCount": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Number of task to initially launch in the service."
+        },
+
+        "MinCapacity": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Minimum number of task that can be launched for this ECS service."
+        },
+
+        "MaxCapacity": {
+            "Type": "Number",
+            "Default" : 1,
+            "Description": "Maximum number of tasks that can be launched for this ECS service."
+        }
+    },
+
+    "Resources": {
+
+        "TaskDef": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties" : {
+                "ContainerDefinitions" : [
+                    {
+                        "Name": { "Ref": "ContainerName" },
+                        "Essential": true,
+                        "Image": { "Ref": "ImageId"},
+                        "Memory": { "Ref": "ContainerMemory" },
+                        "PortMappings": [
+                            {
+                                "HostPort": { "Ref": "HostPort" },
+                                "ContainerPort": { "Ref": "ContainerPort" }
+                            }
+                        ]
+                    }
+                ],
+                "TaskRoleArn": { "Ref": "TaskRoleArn" }
+            }
+        },
+
+        "ECSService": {
+            "Type" : "AWS::ECS::Service",
+            "Properties" : {
+                "Cluster" : { "Ref": "ECSClusterId" },
+                "DeploymentConfiguration" : {
+                    "MaximumPercent" : 100,
+                    "MinimumHealthyPercent" : 0
+                },
+                "DesiredCount" : { "Ref": "DesiredTaskCount" },
+                "LoadBalancers" : [ 
+                    {
+                        "ContainerName": { "Ref": "ContainerName" },
+                        "ContainerPort" : { "Ref": "ContainerPort" },
+                        "TargetGroupArn": { "Ref": "TargetGroupArn" }
+                    }
+                ],
+                "Role" : { "Ref": "ECSRole" },
+                "TaskDefinition" : { "Ref": "TaskDef" }
+            },
+            "DependsOn": [ "ECSRole", "TaskDef" ]
+        },
+
+        "ECSRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2008-10-17",
+                    "Statement": [ {
+                        "Sid": "",
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "ecs.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }]
+                },
+                "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole" ],
+                "Path": "/"
+            }
+        },
+
+        "ECSAutoscalingRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2008-10-17",
+                    "Statement": [ {
+                        "Sid": "",
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "application-autoscaling.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }]
+                },
+                "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole" ],
+                "Path": "/"
+            }
+        },
+        
+        "ECSServiceScalableTarget": {
+            "Type" : "AWS::ApplicationAutoScaling::ScalableTarget",
+            "Properties" : {
+                "MaxCapacity" : { "Ref": "MaxCapacity" },
+                "MinCapacity" : { "Ref": "MinCapacity" },
+                "ResourceId" : { "Fn::Join": [ "/", [ "service", { "Ref": "ECSClusterId" }, { "Fn::GetAtt" : [ "ECSService", "Name" ] } ] ] },
+                "RoleARN" : { "Fn::GetAtt" : ["ECSAutoscalingRole", "Arn"] },
+                "ScalableDimension" : "ecs:service:DesiredCount",
+                "ServiceNamespace" : "ecs"
+            }
+        },
+
+        "ECSServiceScaleUpPolicy": {
+            "Type" : "AWS::ApplicationAutoScaling::ScalingPolicy",
+            "Properties" : {
+                "PolicyName" : "ServiceScaleUpPolicy",
+                "PolicyType" : "StepScaling",
+                "ScalingTargetId" : { "Ref": "ECSServiceScalableTarget" },
+                "StepScalingPolicyConfiguration" : {
+                    "AdjustmentType" : "ChangeInCapacity",
+                    "Cooldown" : 120,
+                    "MetricAggregationType" : "Average",
+                    "StepAdjustments" : [
+                        {
+                            "MetricIntervalLowerBound" : 0,
+                            "ScalingAdjustment" : 1
+                        }
+                    ]
+                }
+            },
+            "DependsOn": [ "ECSServiceScalableTarget" ]
+        },
+
+        "ECSServiceScaleDownPolicy": {
+            "Type" : "AWS::ApplicationAutoScaling::ScalingPolicy",
+            "Properties" : {
+                "PolicyName" : "ServiceScaleDownPolicy",
+                "PolicyType" : "StepScaling",
+                "ScalingTargetId" : { "Ref": "ECSServiceScalableTarget" },
+                "StepScalingPolicyConfiguration" : {
+                    "AdjustmentType" : "ChangeInCapacity",
+                    "Cooldown" : 180,
+                    "MetricAggregationType" : "Average",
+                    "StepAdjustments" : [
+                        {
+                            "MetricIntervalLowerBound" : 0,
+                            "ScalingAdjustment" : -1
+                        }
+                    ]
+                }
+            },
+            "DependsOn": [ "ECSServiceScalableTarget" ]
+        },
+
+        "CPUAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": 2,
+                "Statistic": "Average",
+                "Threshold": 80,
+                "AlarmDescription": "Alarm if CPU too high or metric disappears indicating service is down",
+                "Period": 60,
+                "AlarmActions": [ { "Ref": "ECSServiceScaleUpPolicy" } ],
+                "Namespace": "AWS/ECS",
+                "Dimensions": [
+                    {
+                        "Name": "ClusterName",
+                        "Value": { "Ref": "ECSClusterId" }
+                    },
+                    {
+                        "Name": "ServiceName",
+                        "Value": { "Ref": "ECSService" }
+                    }
+                ],
+                "ComparisonOperator": "GreaterThanThreshold",
+                "MetricName": "CPUUtilization"
+            },
+            "DependsOn": "ECSServiceScaleUpPolicy"
+        },
+
+        "CPUAlarmLow": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": 10,
+                "Statistic": "Average",
+                "Threshold": 20,
+                "AlarmDescription": "Alarm if assigned memory too low or metric disappears indicating service is down",
+                "Period": 60,
+                "AlarmActions": [ { "Ref": "ECSServiceScaleDownPolicy" } ],
+                "Namespace": "AWS/ECS",
+                "Dimensions": [
+                    {
+                        "Name": "ClusterName",
+                        "Value": { "Ref": "ECSClusterId" }
+                    },
+                    {
+                        "Name": "ServiceName",
+                        "Value": { "Ref": "ECSService" }
+                    }
+                ],
+                "ComparisonOperator": "LessThanThreshold",
+                "MetricName": "CPUUtilization"
+            },
+            "DependsOn": "ECSServiceScaleDownPolicy"
+        }
+
+    }
+    
+}

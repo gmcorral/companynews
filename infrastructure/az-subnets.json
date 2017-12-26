@@ -1,0 +1,154 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+
+
+    "Description" : "Three VPC subnets in different AZs",
+
+
+    "Parameters" :
+    {
+
+        "Name": {
+            "Description" : "Name of the subnets",
+            "Type": "String",
+            "ConstraintDescription" : "can contain only ASCII characters"
+        },
+
+        "VPCId": {
+            "Description" : "ID of the container VPC",
+            "Type": "AWS::EC2::VPC::Id",
+            "ConstraintDescription" : "must be a valid VPC ID"
+        },
+
+        "CidrBlocks": {
+            "Description": "Comma-delimited list of CIDR blocks for 3 subnets",
+            "Type": "CommaDelimitedList"
+        },
+
+        "IGId": {
+            "Description" : "ID of the VPC Internet GW to route subnets through it, or empty string to leave subnets without internet connection",
+            "Type": "String",
+            "ConstraintDescription" : "must be a valid Internet GW ID or an empty string"
+        }
+
+    },
+
+    "Conditions" : {
+        "CreateInternetGWRoute" : { "Fn::Not" : [ { "Fn::Equals" : [ {"Ref" : "IGId"}, "" ] } ] }
+    },
+
+    "Resources" :
+    {
+
+        "Subnet1" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : { "Fn::Select": [ 0, { "Ref": "CidrBlocks" } ] },
+                "MapPublicIpOnLaunch" : true,
+                "Tags" : [
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "Name" }, "a" ] ]} }
+                ],
+                "AvailabilityZone" : { "Fn::Select": [0, { "Fn::GetAZs": "" } ] },
+                "VpcId" : { "Ref" : "VPCId" }
+            }
+        },
+
+        "Subnet2" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : { "Fn::Select": [ 1, { "Ref": "CidrBlocks" } ] },
+                "MapPublicIpOnLaunch" : true,
+                "Tags" : [
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "Name" }, "b" ] ]} }
+                ],
+                "AvailabilityZone" : { "Fn::Select": [1, { "Fn::GetAZs": "" } ] },
+                "VpcId" : { "Ref" : "VPCId" }
+            }
+        },
+
+        "Subnet3" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "CidrBlock" : { "Fn::Select": [ 2, { "Ref": "CidrBlocks" } ] },
+                "MapPublicIpOnLaunch" : true,
+                "Tags" : [
+                    { "Key": "Name", "Value" : { "Fn::Join" : [ "-", [ { "Ref" : "Name" }, "c" ] ]} }
+                ],
+                "AvailabilityZone" : { "Fn::Select": [2, { "Fn::GetAZs": "" } ] },
+                "VpcId" : { "Ref" : "VPCId" }
+            }
+        },
+
+        "RouteTable" : {
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VPCId" },
+                "Tags" : [
+                    { "Key": "Name", "Value" : { "Ref" : "Name" } }
+                ]
+            }
+        },
+
+        "IGRoute" : {
+            "Type" : "AWS::EC2::Route",
+            "Condition": "CreateInternetGWRoute",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "GatewayId" : { "Ref" : "IGId" }
+            },
+            "DependsOn": [ "RouteTable" ]
+        },
+
+        "Subnet1RT": {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "SubnetId" : { "Ref" : "Subnet1" }
+            },
+            "DependsOn": [ "Subnet1", "RouteTable" ]
+        },
+
+        "Subnet2RT": {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "SubnetId" : { "Ref" : "Subnet2" }
+            },
+            "DependsOn": [ "Subnet2", "RouteTable" ]
+        },
+
+        "Subnet3RT": {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "RouteTable" },
+                "SubnetId" : { "Ref" : "Subnet3" }
+            },
+            "DependsOn": [ "Subnet3", "RouteTable" ]
+        }
+
+    },
+
+    "Outputs" :
+    {
+        "SubnetA" : {
+            "Description" : "Subnet ID for AZ A",
+            "Value" : { "Ref" : "Subnet1" }
+        },
+
+        "SubnetB" : {
+            "Description" : "Subnet ID for AZ B",
+            "Value" : { "Ref" : "Subnet2" }
+        },
+
+        "SubnetC" : {
+            "Description" : "Subnet ID for AZ C",
+            "Value" : { "Ref" : "Subnet3" }
+        },
+
+        "RouteTable" : {
+            "Description" : "Subnets route table",
+            "Value" : { "Ref" : "RouteTable" }
+        }
+    }
+}
