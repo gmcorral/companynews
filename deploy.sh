@@ -26,7 +26,6 @@ CF_TEMPLATES_URL=https://s3.amazonaws.com/$CF_TEMPLATES_BUCKET
 CF_TEMPLATES_URI=s3://$CF_TEMPLATES_BUCKET
 CF_STACK_NAME=companynews-$ENV
 
-
 ###########################
 # check SW requirements
 
@@ -181,8 +180,8 @@ if [[ $? -gt 0 ]]; then echo " ** ERROR pushing static docker image"; exit 1; fi
 echo " ** [8/10] Uploading Cloudformation templates to S3.."
 $AWS_CLI s3api head-bucket --bucket $CF_TEMPLATES_BUCKET --region $AWS_DEFAULT_REGION > /dev/null
 if [[ $? -gt 0 ]]; then
-    echo "  Creating $CF_TEMPLATES_BUCKET bucket";
-    $AWS_CLI s3api create-bucket --bucket $CF_TEMPLATES_BUCKET; 
+    echo "  Creating $CF_TEMPLATES_BUCKET bucket"
+    $AWS_CLI s3api create-bucket --bucket $CF_TEMPLATES_BUCKET --create-bucket-configuration LocationConstraint=$AWS_DEFAULT_REGION
 fi
 
 upload_dir $CF_TEMPLATES_DIR $CF_TEMPLATES_URI
